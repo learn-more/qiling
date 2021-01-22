@@ -130,10 +130,43 @@ class Registers:
 
 class DisasmView:
     def __init__(self):
-        pass
+        self.lines = []
+        self.md = None
 
-    def frame(self, ql):
-        pass
+    def frame(self, ql, address):
+        if not self.md:
+            self.md = ql.create_disassembler()
+        imgui.set_next_window_position(140, 100, imgui.FIRST_USE_EVER)
+        imgui.set_next_window_size(600, 300, imgui.FIRST_USE_EVER)
+        imgui.begin('Disasm')
+        imgui.columns(3)
+        imgui.separator()
+        for name in ('Address', 'Bytes', 'Instruction'):
+            imgui.text(name)
+            imgui.next_column()
+        imgui.separator()
+
+        if address:
+            data = ql.mem.read(address, 200)
+            decoded = self.md.disasm(data, address)
+            bits = ql.archbit // 4
+            for insn in decoded:
+                addr = '%0*x' % (bits, insn.address)
+                selected = address == insn.address
+                imgui.selectable(addr, selected, flags=imgui.SELECTABLE_SPAN_ALL_COLUMNS)
+                imgui.next_column()
+
+                data = ''
+                for byte in insn.bytes:
+                    data += ('%02x ' % byte)
+                imgui.text(data)
+                imgui.next_column()
+
+                imgui.text(f'{insn.mnemonic} {insn.op_str}')
+                imgui.next_column()
+
+        imgui.columns(1)
+        imgui.end()
 
 
 class EmuObject:
@@ -144,17 +177,33 @@ class EmuObject:
         logger = logging.getLogger()
         logger.addHandler(self.log_window)
         self.ql = None
+        self._started = False
         self.init()
+
+    def start_address(self):
+        if self._started:
+            return self.ql.reg.arch_pc
+        elif self.ql.entry_point:
+            return self.ql.entry_point
+        else:
+            return self.ql.loader.entry_point
+
+    def exit_point(self):
+        if not self._started and self.ql.entry_point:
+            return self.ql.entry_point
+        return self.ql.loader.entry_point
+
 
     def init(self):
         self.ql = Qiling([ROOTFS_PATH_32 / 'bin' /  'cmdln32.exe'],
                     ROOTFS_PATH_32,
                     libcache=True)
+        self._started = False
 
     def frame_fn(self, dt):
         self.control_window(dt)
         self.registers.frame(self.ql)
-        self.disasm.frame(self.ql)
+        self.disasm.frame(self.ql, self.start_address())
         self.log_window.frame()
 
         #imgui.set_next_window_collapsed(True, imgui.FIRST_USE_EVER)
@@ -169,7 +218,11 @@ class EmuObject:
             self.init()
         imgui.same_line()
         if imgui.button(' > Step '):
-            self.ql.run(count=1)
+            if not self._started:
+                self.ql.run(count=1)
+                self._started = True
+            else:
+                self.ql.emu_start(self.start_address(), self.exit_point(), 0, 1)
         imgui.end()
 
 
