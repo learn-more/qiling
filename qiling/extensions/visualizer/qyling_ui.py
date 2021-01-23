@@ -10,9 +10,9 @@ from qiling.arch.x86_const import reg_map_32 as x86_reg_map_32
 from qiling.arch.x86_const import reg_map_64 as x86_reg_map_64
 from qiling.arch.x86_const import reg_map_misc as x86_reg_map_misc
 from qiling.arch.x86_const import reg_map_st as x86_reg_map_st
-from qiling.arch.arm_const import reg_map as arm_reg_map
-from qiling.arch.arm64_const import reg_map as arm64_reg_map
-from qiling.arch.mips_const import reg_map as mips_reg_map
+#from qiling.arch.arm_const import reg_map as arm_reg_map
+#from qiling.arch.arm64_const import reg_map as arm64_reg_map
+#from qiling.arch.mips_const import reg_map as mips_reg_map
 
 
 SELF_PATH = Path(__file__).parent
@@ -89,8 +89,9 @@ class Registers:
             'ds': 16 // 4, 'es': 16 // 4,
             'fs': 16 // 4, 'gs': 16 // 4,
         }
+        self._regs = []
 
-    def bit(self, ql, reg):
+    def _bit(self, ql, reg):
         if not reg in self._bits:
             bitval = ql.reg.bit(reg)
             assert bitval is not None, reg
@@ -98,34 +99,45 @@ class Registers:
             self._bits[reg] = bitval // 4
         return self._bits[reg]
 
-    def frame(self, ql):
-        imgui.set_next_window_position(10, 100, imgui.FIRST_USE_EVER)
-        imgui.begin('Registers', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)
-        if ql:
-            regs = get_reg_map(ql)
-            for reg in regs:
-                self._one_reg(ql, reg, '%-3s  %0*x')
-            self._special_regs(ql)
-        imgui.end()
+    def capture(self, ql, address):
+        if not ql:
+            return
+        self._regs = []
+        regs = get_reg_map(ql)
+        for reg in regs:
+            self._regs.append(self._one_reg(ql, reg, '%-3s  %0*x'))
+
+        full_map = get_reg_map_misc(ql)
+        if not full_map:
+            return
+
+        regs = [reg for reg in full_map if reg != 'ef']
+        self._regs.append('-sep-')
+        if 'ef' in full_map:
+            self._regs.append(self._one_reg(ql, 'ef', '%-3s  %0*x'))
+            self._regs.append('-sep-')
+
+        for idx, reg in enumerate(regs):
+            if idx % 2 == 1:
+                self._regs.append('-same-')
+            self._regs.append(self._one_reg(ql, reg, '%s %0*x'))
 
     def _one_reg(self, ql, reg, fmt):
         val = ql.reg.read(reg)
-        bits = self.bit(ql, reg)
-        imgui.text(fmt % (reg, bits, val))
+        bits = self._bit(ql, reg)
+        return fmt % (reg, bits, val)
 
-    def _special_regs(self, ql):
-        full_map = get_reg_map_misc(ql)
-        regs = [reg for reg in full_map if reg != 'ef']
-        if regs:
-            imgui.separator()
-            if 'ef' in full_map:
-                self._one_reg(ql, 'ef', '%-3s  %0*x')
+    def frame(self):
+        imgui.set_next_window_position(10, 100, imgui.FIRST_USE_EVER)
+        imgui.begin('Registers', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)
+        for line in self._regs:
+            if line == '-same-':
+                imgui.same_line()
+            elif line == '-sep-':
                 imgui.separator()
-
-            for idx, reg in enumerate(regs):
-                if idx % 2 == 1:
-                    imgui.same_line()
-                self._one_reg(ql, reg, '%s %0*x')
+            else:
+                imgui.text(line)
+        imgui.end()
 
 
 class DisasmView:
@@ -207,16 +219,29 @@ class EmuObject:
                     ROOTFS_PATH_32,
                     libcache=True)
         self._started = False
+        self.capture()
+
+    def capture(self):
         self.disasm.capture(self.ql, self.start_address())
+        self.registers.capture(self.ql, self.start_address())
 
     def frame_fn(self, dt):
         self.control_window(dt)
-        self.registers.frame(self.ql)
+        self.registers.frame()
         self.disasm.frame()
         self.log_window.frame()
 
         #imgui.set_next_window_collapsed(True, imgui.FIRST_USE_EVER)
         #imgui.show_demo_window()
+
+    def step(self):
+        if not self._started:
+            self.ql.run(count=1)
+            self._started = True
+        else:
+            self.ql.emu_start(self.start_address(), self.exit_point(), 0, 1)
+        self.capture()
+
 
     def control_window(self, dt):
         imgui.set_next_window_position(10, 10, imgui.FIRST_USE_EVER)
@@ -227,12 +252,7 @@ class EmuObject:
             self.init()
         imgui.same_line()
         if imgui.button(' > Step '):
-            if not self._started:
-                self.ql.run(count=1)
-                self._started = True
-            else:
-                self.ql.emu_start(self.start_address(), self.exit_point(), 0, 1)
-            self.disasm.capture(self.ql, self.start_address())
+            self.step()
         imgui.end()
 
 
