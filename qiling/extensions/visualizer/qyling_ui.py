@@ -133,9 +133,26 @@ class DisasmView:
         self.lines = []
         self.md = None
 
-    def frame(self, ql, address):
+    def capture(self, ql, address):
         if not self.md:
             self.md = ql.create_disassembler()
+        self.lines = []
+        if address:
+            data = ql.mem.read(address, 200)
+            decoded = self.md.disasm(data, address)
+            bits = ql.archbit // 4
+            for insn in decoded:
+                addr = '%0*x' % (bits, insn.address)
+                selected = address == insn.address
+
+                data = ''
+                for byte in insn.bytes:
+                    data += ('%02x ' % byte)
+
+                insn_text = f'{insn.mnemonic} {insn.op_str}'
+                self.lines.append((addr, selected, data, insn_text))
+
+    def frame(self):
         imgui.set_next_window_position(140, 100, imgui.FIRST_USE_EVER)
         imgui.set_next_window_size(600, 300, imgui.FIRST_USE_EVER)
         imgui.begin('Disasm')
@@ -146,24 +163,15 @@ class DisasmView:
             imgui.next_column()
         imgui.separator()
 
-        if address:
-            data = ql.mem.read(address, 200)
-            decoded = self.md.disasm(data, address)
-            bits = ql.archbit // 4
-            for insn in decoded:
-                addr = '%0*x' % (bits, insn.address)
-                selected = address == insn.address
-                imgui.selectable(addr, selected, flags=imgui.SELECTABLE_SPAN_ALL_COLUMNS)
-                imgui.next_column()
+        for addr, selected, data, insn_text in self.lines:
+            imgui.selectable(addr, selected, flags=imgui.SELECTABLE_SPAN_ALL_COLUMNS)
+            imgui.next_column()
 
-                data = ''
-                for byte in insn.bytes:
-                    data += ('%02x ' % byte)
-                imgui.text(data)
-                imgui.next_column()
+            imgui.text(data)
+            imgui.next_column()
 
-                imgui.text(f'{insn.mnemonic} {insn.op_str}')
-                imgui.next_column()
+            imgui.text(insn_text)
+            imgui.next_column()
 
         imgui.columns(1)
         imgui.end()
@@ -199,11 +207,12 @@ class EmuObject:
                     ROOTFS_PATH_32,
                     libcache=True)
         self._started = False
+        self.disasm.capture(self.ql, self.start_address())
 
     def frame_fn(self, dt):
         self.control_window(dt)
         self.registers.frame(self.ql)
-        self.disasm.frame(self.ql, self.start_address())
+        self.disasm.frame()
         self.log_window.frame()
 
         #imgui.set_next_window_collapsed(True, imgui.FIRST_USE_EVER)
@@ -223,6 +232,7 @@ class EmuObject:
                 self._started = True
             else:
                 self.ql.emu_start(self.start_address(), self.exit_point(), 0, 1)
+            self.disasm.capture(self.ql, self.start_address())
         imgui.end()
 
 
