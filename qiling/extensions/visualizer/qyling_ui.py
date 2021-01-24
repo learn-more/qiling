@@ -20,6 +20,11 @@ SRC_PATH = SELF_PATH.parent.parent.parent
 ROOTFS_PATH_32 = SRC_PATH / 'examples' / 'rootfs' / 'x86_windows'
 ROOTFS_PATH_64 = SRC_PATH / 'examples' / 'rootfs' / 'x8664_windows'
 
+
+SPEED_TEXT = ['0 ms', '50 ms', '100 ms', '300 ms', '1 s']
+SPEED_VALUES = [0,     0.05,    0.1,     0.3,      1.0]
+
+
 # pip install imgui[pyglet]
 # https://www.aeracode.org/2018/02/19/python-async-simplified/
 
@@ -90,6 +95,7 @@ class Registers:
             'fs': 16 // 4, 'gs': 16 // 4,
         }
         self._regs = []
+        self._old = {}
 
     def _bit(self, ql, reg):
         if not reg in self._bits:
@@ -105,7 +111,7 @@ class Registers:
         self._regs = []
         regs = get_reg_map(ql)
         for reg in regs:
-            self._regs.append(self._one_reg(ql, reg, '%-3s  %0*x'))
+            self._regs.append(self._one_reg(ql, reg, '%-3s  %s%0*x'))
 
         full_map = get_reg_map_misc(ql)
         if not full_map:
@@ -114,18 +120,22 @@ class Registers:
         regs = [reg for reg in full_map if reg != 'ef']
         self._regs.append('-sep-')
         if 'ef' in full_map:
-            self._regs.append(self._one_reg(ql, 'ef', '%-3s  %0*x'))
+            self._regs.append(self._one_reg(ql, 'ef', '%-3s  %s%0*x'))
             self._regs.append('-sep-')
 
         for idx, reg in enumerate(regs):
             if idx % 2 == 1:
                 self._regs.append('-same-')
-            self._regs.append(self._one_reg(ql, reg, '%s %0*x'))
+            self._regs.append(self._one_reg(ql, reg, '%s %s%0*x'))
 
     def _one_reg(self, ql, reg, fmt):
         val = ql.reg.read(reg)
         bits = self._bit(ql, reg)
-        return fmt % (reg, bits, val)
+        color = '\033[0m'
+        if val != self._old.get(reg, val):
+            color = '\033[31m'
+        self._old[reg] = val
+        return fmt % (reg, color, bits, val)
 
     def frame(self):
         imgui.set_next_window_position(10, 100, imgui.FIRST_USE_EVER)
@@ -136,7 +146,7 @@ class Registers:
             elif line == '-sep-':
                 imgui.separator()
             else:
-                imgui.text(line)
+                imgui.text_ansi(line)
         imgui.end()
 
 
@@ -198,6 +208,8 @@ class EmuObject:
         logger.addHandler(self.log_window)
         self.ql = None
         self._started = False
+        self._speed = 3     # 300 ms
+        self._dt = None
         self.init()
 
     def start_address(self):
@@ -226,6 +238,13 @@ class EmuObject:
         self.registers.capture(self.ql, self.start_address())
 
     def frame_fn(self, dt):
+        if self._dt is not None:
+            self._dt += dt
+            if self._dt >= SPEED_VALUES[self._speed]:
+                self.step()
+                self._dt = 0.0
+
+
         self.control_window(dt)
         self.registers.frame()
         self.disasm.frame()
@@ -253,6 +272,16 @@ class EmuObject:
         imgui.same_line()
         if imgui.button(' > Step '):
             self.step()
+        imgui.same_line()
+        running = self._dt is not None
+        run_text = ' [] Stop###StartStop' if running else ' >> Run ###StartStop'
+        if imgui.button(run_text, ):
+            if running:
+                self._dt = None
+            else:
+                self._dt = 0.0
+        imgui.same_line()
+        _, self._speed = imgui.slider_int('', self._speed, 0, len(SPEED_VALUES) - 1, SPEED_TEXT[self._speed])
         imgui.end()
 
 
