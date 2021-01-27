@@ -4,6 +4,7 @@ from pathlib import Path
 from qiling import Qiling
 from qiling.const import QL_ARCH
 from qiling.utils import QilingColoredFormatter, FMT_STR
+import capstone
 
 # Regmaps
 from qiling.arch.x86_const import reg_map_32 as x86_reg_map_32
@@ -50,6 +51,12 @@ def get_reg_map_misc(ql:Qiling):
 
     return tables[ql.archtype]
 
+def get_offset_and_name(ql, address):
+    offset, name = ql.os.get_offset_and_name(address)
+    if name == '[PE]':
+        name = ql.targetname
+    return offset, name
+
 class LogWindow(logging.Handler):
     def __init__(self):
         super().__init__()
@@ -60,7 +67,7 @@ class LogWindow(logging.Handler):
         formatter = QilingColoredFormatter(ql, FMT_STR)
         self.setFormatter(formatter)
         logger.level = logging.DEBUG
-        logger.handlers = []
+        logger.handlers = []    # Remove the default console logger
         logger.addHandler(self)
 
     def emit(self, record):
@@ -154,16 +161,17 @@ class Registers:
                 imgui.text_ansi(line)
         imgui.end()
 
-
 class DisasmView:
     def __init__(self):
         self.lines = []
         self.md = None
         self._addr_width = 0
 
+
     def capture(self, ql, address):
         if not self.md:
             self.md = ql.create_disassembler()
+            self.md.detail = True   # Ask capstone to add instruction details
         self.lines = []
         if address:
             data = ql.mem.read(address, 200)
@@ -173,7 +181,7 @@ class DisasmView:
             #w = imgui.calc_text_size('%0*x' % (bits, 0))
             self._addr_width = bits * 10
             for insn in decoded:
-                offset, name = ql.os.get_offset_and_name(insn.address)
+                offset, name = get_offset_and_name(ql, insn.address)
                 addr_name = '%s + 0x%03x' % (name, offset)
 
                 addr = '%0*x' % (bits, insn.address)
@@ -183,7 +191,22 @@ class DisasmView:
                 for byte in insn.bytes:
                     data += ('%02x ' % byte)
 
-                insn_text = f'{insn.mnemonic} {insn.op_str}'
+                op_str = insn.op_str
+                if len(insn.operands) == 1:
+                    op = insn.operands[0]
+                    if op.type == capstone.CS_OP_IMM:
+                        offset, name = get_offset_and_name(ql, op.imm)
+                        if name != '-':
+                            op_str = '[%s + 0x%03x]' % (name, offset)
+                    elif op.type == capstone.CS_OP_MEM:
+                        mem = op.mem
+                        if mem.base == 0 and mem.segment == 0 and mem.scale == 1:
+                            assert op.size == 4, op.size
+                            offset, name = get_offset_and_name(ql, mem.disp)
+                            if name != '-':
+                                op_str = 'dword ptr [%s + 0x%03x]' % (name, offset)
+
+                insn_text = f'{insn.mnemonic} {op_str}'
                 self.lines.append((addr, addr_name, selected, data, insn_text))
 
     def frame(self):
@@ -224,8 +247,6 @@ class EmuObject:
         self.log_window = LogWindow()
         self.registers = Registers()
         self.disasm = DisasmView()
-        #logger = logging.getLogger()
-        #logger.addHandler(self.log_window)
         self.ql = None
         self._started = False
         self._speed = 3     # 300 ms
