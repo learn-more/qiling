@@ -3,7 +3,7 @@ from imgui.integrations.pyglet import create_renderer
 from pathlib import Path
 from qiling import Qiling
 from qiling.const import QL_ARCH
-from qiling.utils import ColoredFormatter, FMT_STR
+from qiling.utils import QilingColoredFormatter, FMT_STR
 
 # Regmaps
 from qiling.arch.x86_const import reg_map_32 as x86_reg_map_32
@@ -54,15 +54,20 @@ class LogWindow(logging.Handler):
     def __init__(self):
         super().__init__()
         self._msgs = []
-        self._scroll_to_bottom = False
-        formatter = ColoredFormatter(FMT_STR)
+        self._scroll_to_bottom = 0
+
+    def on_logger_created(self, ql, logger):
+        formatter = QilingColoredFormatter(ql, FMT_STR)
         self.setFormatter(formatter)
+        logger.level = logging.DEBUG
+        logger.handlers = []
+        logger.addHandler(self)
 
     def emit(self, record):
         msg = self.format(record)
         msg = msg.replace('\033[9', '\033[3')   # pyimgui does not support the 'BRIGHT' colors
         self._msgs.append(msg)
-        self._scroll_to_bottom = True
+        self._scroll_to_bottom = 2
 
     def clear(self):
         self._msgs = []
@@ -78,8 +83,8 @@ class LogWindow(logging.Handler):
         imgui.push_style_var(imgui.STYLE_ITEM_SPACING, imgui.Vec2(0, 1))
         for line in self._msgs:
             imgui.text_ansi(line)
-        if self._scroll_to_bottom:
-            self._scroll_to_bottom = False
+        if self._scroll_to_bottom > 0:
+            self._scroll_to_bottom -= 1
             imgui.set_scroll_here(1.0)
         imgui.pop_style_var()
         imgui.end_child()
@@ -154,6 +159,7 @@ class DisasmView:
     def __init__(self):
         self.lines = []
         self.md = None
+        self._addr_width = 0
 
     def capture(self, ql, address):
         if not self.md:
@@ -163,7 +169,13 @@ class DisasmView:
             data = ql.mem.read(address, 200)
             decoded = self.md.disasm(data, address)
             bits = ql.archbit // 4
+            #tmp = 
+            #w = imgui.calc_text_size('%0*x' % (bits, 0))
+            self._addr_width = bits * 10
             for insn in decoded:
+                offset, name = ql.os.get_offset_and_name(insn.address)
+                addr_name = '%s + 0x%03x' % (name, offset)
+
                 addr = '%0*x' % (bits, insn.address)
                 selected = address == insn.address
 
@@ -172,21 +184,29 @@ class DisasmView:
                     data += ('%02x ' % byte)
 
                 insn_text = f'{insn.mnemonic} {insn.op_str}'
-                self.lines.append((addr, selected, data, insn_text))
+                self.lines.append((addr, addr_name, selected, data, insn_text))
 
     def frame(self):
-        imgui.set_next_window_position(140, 100, imgui.FIRST_USE_EVER)
-        imgui.set_next_window_size(600, 300, imgui.FIRST_USE_EVER)
+        imgui.set_next_window_position(240, 100, imgui.FIRST_USE_EVER)
+        imgui.set_next_window_size(900, 300, imgui.FIRST_USE_EVER)
         imgui.begin('Disasm')
-        imgui.columns(3)
+        imgui.columns(4)
         imgui.separator()
-        for name in ('Address', 'Bytes', 'Instruction'):
+        width = self._addr_width
+        for name in ('Address', 'Module Address', 'Bytes', 'Instruction'):
             imgui.text(name)
+            if width:
+                imgui.set_column_width(-1, width)
+                width = 0
             imgui.next_column()
         imgui.separator()
 
-        for addr, selected, data, insn_text in self.lines:
+        for addr, addr_name, selected, data, insn_text in self.lines:
             imgui.selectable(addr, selected, flags=imgui.SELECTABLE_SPAN_ALL_COLUMNS)
+            imgui.calc_text_size('')
+            imgui.next_column()
+
+            imgui.text(addr_name)
             imgui.next_column()
 
             imgui.text(data)
@@ -204,8 +224,8 @@ class EmuObject:
         self.log_window = LogWindow()
         self.registers = Registers()
         self.disasm = DisasmView()
-        logger = logging.getLogger()
-        logger.addHandler(self.log_window)
+        #logger = logging.getLogger()
+        #logger.addHandler(self.log_window)
         self.ql = None
         self._started = False
         self._speed = 3     # 300 ms
@@ -229,7 +249,8 @@ class EmuObject:
     def init(self):
         self.ql = Qiling([ROOTFS_PATH_32 / 'bin' /  'cmdln32.exe'],
                     ROOTFS_PATH_32,
-                    libcache=True)
+                    libcache=True,
+                    on_logger_created=self.log_window.on_logger_created)
         self._started = False
         self.capture()
 
