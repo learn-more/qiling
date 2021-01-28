@@ -25,6 +25,17 @@ ROOTFS_PATH_64 = SRC_PATH / 'examples' / 'rootfs' / 'x8664_windows'
 SPEED_TEXT = ['0 ms', '50 ms', '100 ms', '300 ms', '1 s']
 SPEED_VALUES = [0,     0.05,    0.1,     0.3,      1.0]
 
+LOGGER_NUMBER = 123
+
+def create_logger(handler):
+    global LOGGER_NUMBER
+    log = logging.getLogger(f'ql_ui{LOGGER_NUMBER}')
+    LOGGER_NUMBER += 1
+
+    log.propagate = False
+    log.addHandler(handler)
+    return log
+
 
 # pip install imgui[pyglet]
 # https://www.aeracode.org/2018/02/19/python-async-simplified/
@@ -77,23 +88,36 @@ class LogWindow(logging.Handler):
     def __init__(self):
         super().__init__()
         self._msgs = []
+        self._unformatted = []
         self._scroll_to_bottom = 0
+        self.level = logging.DEBUG
 
-    def on_logger_created(self, ql, logger):
+    def set_ql(self, ql):
+        assert not self.formatter
         formatter = QilingColoredFormatter(ql, FMT_STR)
         self.setFormatter(formatter)
-        logger.level = logging.DEBUG
-        logger.handlers = []    # Remove the default console logger
-        logger.addHandler(self)
+
+        # Now that we have a formatter, process records we could not process before
+        unformatted = self._unformatted
+        self._unformatted = False   # Ensure we cannot use this anymore
+        for record in unformatted:
+            self.emit(record)
 
     def emit(self, record):
-        msg = self.format(record)
-        msg = msg.replace('\033[9', '\033[3')   # pyimgui does not support the 'BRIGHT' colors
-        self._msgs.append(msg)
-        self._scroll_to_bottom = 2
+        if self.formatter:
+            msg = self.format(record)
+            msg = msg.replace('\033[9', '\033[3')   # pyimgui does not support the 'BRIGHT' colors
+            self._msgs.append(msg)
+            self._scroll_to_bottom = 2
+        else:
+            # We are not able to format records yet (no ql object),
+            # so store them for later
+            self._unformatted.append(record)
 
     def clear(self):
         self._msgs = []
+        self._unformatted = []
+        self.formatter = None
 
     def frame(self):
         imgui.set_next_window_position(10, 440, imgui.FIRST_USE_EVER)
@@ -182,7 +206,7 @@ class DisasmView:
         self.lines = []
         self.md = None
         self._widths = []
-
+        self._history = []
 
     def capture(self, ql, address):
         if not self.md:
@@ -314,7 +338,10 @@ class EmuObject:
         self.ql = Qiling([ROOTFS_PATH_32 / 'bin' /  'cmdln32.exe'],
                     ROOTFS_PATH_32,
                     libcache=True,
-                    on_logger_created=self.log_window.on_logger_created)
+                    output='debug',
+                    log_override=create_logger(self.log_window))
+        # Now process stuff logged during creation:
+        self.log_window.set_ql(self.ql)
         self._started = False
         self.capture()
 
