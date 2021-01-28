@@ -6,7 +6,7 @@ def addr_to_str(ql, address):
 
     Args:
         ql (Qiling): The current Qiling instance
-        address ([type]): [description]
+        address (int): The address
 
     Returns:
         string: The pretty-printed result
@@ -20,8 +20,11 @@ def addr_to_str(ql, address):
         if sym:
             return '%s.%s' % (sym['dll'], sym['name'].decode())
 
+    # Replace the [PE] placeholder with the actual name
     if name == '[PE]':
         name = ql.targetname
+
+    # We were unable to find a 'pretty' label, so just represent it as module + offset
     if name == '-':
         return '%0*x' % (ql.archbit // 4, address)
     else:
@@ -36,6 +39,12 @@ def calc_text_content_size(text):
 
 class DisasmWindow:
     def __init__(self):
+        self.lines = []
+        self.md = None
+        self._widths = []
+        self._history = []
+
+    def reset(self):
         self.lines = []
         self.md = None
         self._widths = []
@@ -112,6 +121,7 @@ class DisasmWindow:
             if isinstance(self._widths[0], str):
                 for idx, text in enumerate(self._widths):
                     self._widths[idx] = calc_text_content_size(text)
+                print(self._widths)
 
         for idx, name in enumerate(['Address', 'Module Address', 'Bytes', 'Instruction']):
             imgui.text(name)
@@ -124,7 +134,7 @@ class DisasmWindow:
 
         for addr, addr_name, selected, data, insn_text in self.lines:
             imgui.selectable(addr, selected, flags=imgui.SELECTABLE_SPAN_ALL_COLUMNS)
-            imgui.calc_text_size('')
+            #imgui.selectable(addr, selected)
             imgui.next_column()
 
             imgui.text(addr_name)

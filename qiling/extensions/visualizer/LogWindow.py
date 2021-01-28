@@ -42,7 +42,7 @@ class LogWindow(logging.Handler):
         for record in unformatted:
             self.emit(record)
 
-    def clear(self):
+    def reset(self):
         self._msgs = []
         self._unformatted = []
         self.formatter = None
