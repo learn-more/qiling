@@ -51,11 +51,27 @@ def get_reg_map_misc(ql:Qiling):
 
     return tables[ql.archtype]
 
-def get_offset_and_name(ql, address):
+def calc_text_content_size(text):
+    text_size = imgui.calc_text_size(text)
+    style = imgui.get_style()
+    return text_size.x + style.item_spacing.x * 2
+
+def addr_to_str(ql, address):
     offset, name = ql.os.get_offset_and_name(address)
+
+    pe = ql.loader
+    if hasattr(pe, 'import_symbols'):
+        # Optimal case, we have an exact match
+        sym = pe.import_symbols.get(address, None)
+        if sym:
+            return '%s.%s' % (sym['dll'], sym['name'].decode())
+
     if name == '[PE]':
         name = ql.targetname
-    return offset, name
+    if name == '-':
+        return '%0*x' % (ql.archbit // 4, address)
+    else:
+        return '%s + 0x%03x' % (name, offset)
 
 class LogWindow(logging.Handler):
     def __init__(self):
@@ -165,49 +181,69 @@ class DisasmView:
     def __init__(self):
         self.lines = []
         self.md = None
-        self._addr_width = 0
+        self._widths = []
 
 
     def capture(self, ql, address):
         if not self.md:
             self.md = ql.create_disassembler()
             self.md.detail = True   # Ask capstone to add instruction details
+            self.md.skipdata = True
+
         self.lines = []
         if address:
+            # Gather a few instructions before the current instruction
+            offset, read_back = 0, 30
+            data = ql.mem.read(address - read_back, read_back)
+            decoded = list(self.md.disasm(data, address-read_back))
+            # If the next instruction is not our 'current' instruction,
+            # there was probably a decode error, so move one byte ahead and retry
+            while len(decoded) > 0 and decoded[-1].address + decoded[-1].size != address:
+                offset += 1
+                diff = read_back - offset
+                decoded = self.md.disasm(data[diff:], address - diff)[:]
+
             data = ql.mem.read(address, 200)
-            decoded = self.md.disasm(data, address)
+            decoded.extend(self.md.disasm(data, address))
             bits = ql.archbit // 4
-            #tmp = 
-            #w = imgui.calc_text_size('%0*x' % (bits, 0))
-            self._addr_width = bits * 10
             for insn in decoded:
-                offset, name = get_offset_and_name(ql, insn.address)
-                addr_name = '%s + 0x%03x' % (name, offset)
+                addr_name = addr_to_str(ql, insn.address)
 
                 addr = '%0*x' % (bits, insn.address)
                 selected = address == insn.address
+
+                # Ensure there are 2 lines visible before the active line
+                if selected and len(self.lines) > 2:
+                    self.lines = self.lines[-2:]
 
                 data = ''
                 for byte in insn.bytes:
                     data += ('%02x ' % byte)
 
                 op_str = insn.op_str
-                if len(insn.operands) == 1:
+                if insn.id != capstone.CS_OP_INVALID and len(insn.operands) == 1:
                     op = insn.operands[0]
                     if op.type == capstone.CS_OP_IMM:
-                        offset, name = get_offset_and_name(ql, op.imm)
-                        if name != '-':
-                            op_str = '[%s + 0x%03x]' % (name, offset)
+                        op_str = addr_to_str(ql, op.imm)
                     elif op.type == capstone.CS_OP_MEM:
                         mem = op.mem
                         if mem.base == 0 and mem.segment == 0 and mem.scale == 1:
                             assert op.size == 4, op.size
-                            offset, name = get_offset_and_name(ql, mem.disp)
-                            if name != '-':
-                                op_str = 'dword ptr [%s + 0x%03x]' % (name, offset)
+                            ptr_name = addr_to_str(ql, mem.disp)
+                            dest = ql.mem.read_ptr(mem.disp)
+                            dest_name = addr_to_str(ql, dest)
+                            op_str = 'dword ptr [%s]; %s' % (ptr_name, dest_name)
 
                 insn_text = f'{insn.mnemonic} {op_str}'
                 self.lines.append((addr, addr_name, selected, data, insn_text))
+
+            # Since we do not have an active imgui context here, we just store the longest string,
+            # so that we can calculate the text width later
+            self._widths = ['', '', '']
+            for addr, addr_name, _, data, _ in self.lines:
+                for idx, value in enumerate([addr, addr_name, data]):
+                    if len(value) > len(self._widths[idx]):
+                        self._widths[idx] = value
 
     def frame(self):
         imgui.set_next_window_position(240, 100, imgui.FIRST_USE_EVER)
@@ -215,13 +251,20 @@ class DisasmView:
         imgui.begin('Disasm')
         imgui.columns(4)
         imgui.separator()
-        width = self._addr_width
-        for name in ('Address', 'Module Address', 'Bytes', 'Instruction'):
+        if self._widths:
+            # We need an active imgui context to calculate text width,
+            # so we delegated width calculation until we have one
+            if isinstance(self._widths[0], str):
+                for idx, text in enumerate(self._widths):
+                    self._widths[idx] = calc_text_content_size(text)
+
+        for idx, name in enumerate(['Address', 'Module Address', 'Bytes', 'Instruction']):
             imgui.text(name)
-            if width:
-                imgui.set_column_width(-1, width)
-                width = 0
+            if idx < len(self._widths):
+                imgui.set_column_width(-1, self._widths[idx])
             imgui.next_column()
+        if self._widths:
+            self._widths = []
         imgui.separator()
 
         for addr, addr_name, selected, data, insn_text in self.lines:
@@ -283,8 +326,8 @@ class EmuObject:
         if self._dt is not None:
             self._dt += dt
             if self._dt >= SPEED_VALUES[self._speed]:
-                self.step()
                 self._dt = 0.0
+                self.step()
 
 
         self.control_window(dt)
@@ -301,6 +344,9 @@ class EmuObject:
             self._started = True
         else:
             self.ql.emu_start(self.start_address(), self.exit_point(), 0, 1)
+        # Process exit?
+        if not getattr(self.ql.os, 'PE_RUN', True):
+            self._dt = None
         self.capture()
 
 
@@ -347,6 +393,7 @@ def run_window(update_fn):
     pyglet.clock.schedule_interval(draw, 1/120.)
     pyglet.app.run()
     impl.shutdown()
+
 
 if __name__ == "__main__":
     emu = EmuObject()
