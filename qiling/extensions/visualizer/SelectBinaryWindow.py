@@ -25,6 +25,12 @@ class SelectBinaryWindow:
     def rootfs_dir(self):
         return ROOTFS_BASE_PATH / self._rootfs_items[self._rootfs]
 
+    def loglevel(self):
+        return self._loglevel_items[self._loglevel]
+
+    def binary(self):
+        return self._binary_items[self._binary]
+
     def update_binaries(self):
         self._binary_items = []
         self._binary = 0
@@ -34,15 +40,26 @@ class SelectBinaryWindow:
 
 
     def frame(self):
-        imgui.begin('Select example', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)
-        changed, self._rootfs = imgui.combo('Rootfs', self._rootfs, self._rootfs_items)
+        imgui.begin('Get started', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)
+        imgui.text_unformatted('Rootfs:')
+        changed, self._rootfs = imgui.combo('##Rootfs', self._rootfs, self._rootfs_items)
         if changed:
             self.update_binaries()
 
-        _, self._binary = imgui.combo('Binary', self._binary, self._binary_items)
-        _, self._loglevel = imgui.combo('Loglevel', self._loglevel, self._loglevel_items)
+        #text_centered('Choose a binary')
+        imgui.text_unformatted('Binary:')
+        _, self._binary = imgui.combo('##Binary', self._binary, self._binary_items)
+        imgui.spacing()
+        imgui.separator()
+        imgui.text_unformatted('Loglevel:')
+        _, self._loglevel = imgui.combo('##Loglevel', self._loglevel, self._loglevel_items)
 
+        imgui.spacing()
 
+        if imgui.button(' Run '):
+            argv = [self.rootfs_dir() / 'bin' / self.binary()]
+            imgui.end()
+            return argv, self.rootfs_dir(), self.loglevel()
 
         imgui.end()
         #return argv, rootfs, output

@@ -30,7 +30,6 @@ class QilingView:
         self._argv = None
         self._rootfs = None
         self._output = None
-        #self.init()
 
     def start_address(self):
         if self._started:
@@ -44,6 +43,13 @@ class QilingView:
         if not self._started and self.ql.entry_point:
             return self.ql.entry_point
         return self.ql.loader.entry_point
+
+    def close(self):
+        self._dt = None
+        self._started = False
+        self.disasm.reset()
+        self.log.reset()
+        self.ql = None
 
     def init(self):
         self._dt = None
@@ -121,15 +127,24 @@ class QilingView:
         imgui.same_line()
 
         _, self._speed = imgui.slider_int('', self._speed, 0, len(SPEED_VALUES) - 1, SPEED_TEXT[self._speed])
+        imgui.same_line()
+
+        if imgui.button(' Close '):
+            self.close()
         imgui.end()
 
 
 def run_window(update_fn):
     window = pyglet.window.Window(width=1280, height=720, resizable=True)
+    pyglet.gl.glClearColor(0.4, 0.5, 0.6, 1)
     imgui.create_context()
     io = imgui.get_io()
     io.ini_file_name = b''      # Disable imgui.ini
+    #io.config_windows_move_from_title_bar_only = True
+
     imgui.style_colors_dark()   # Set dark style
+    style = imgui.get_style()
+    style.frame_rounding = 3.0
     impl = create_renderer(window)
 
     def draw(dt):
@@ -144,7 +159,13 @@ def run_window(update_fn):
     pyglet.app.run()
     impl.shutdown()
 
+class DumOut:
+    def write(self, text):
+        pass
+
 
 if __name__ == "__main__":
+    #import sys
+    #sys.stdout = DumOut()
     emu = QilingView()
     run_window(emu.frame)
