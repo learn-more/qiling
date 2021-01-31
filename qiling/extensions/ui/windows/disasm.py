@@ -20,7 +20,7 @@ def addr_to_str(ql, address):
             return '%s.%s' % (sym['dll'], sym['name'].decode())
 
     # Replace the [PE] placeholder with the actual name
-    if name == '[PE]':
+    if name == '[PE]' or name == '[module]':
         name = ql.targetname
 
     # We were unable to find a 'pretty' label, so just represent it as module + offset
