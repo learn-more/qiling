@@ -1,4 +1,11 @@
-import imgui, pyglet, sys
+try:
+    import imgui, pyglet, sys
+except ImportError as ex:
+    print('---')
+    print('Please install imgui with pyglet support:')
+    print('`pip install imgui[pyglet]`')
+    print('---')
+    raise
 from imgui.integrations.pyglet import create_renderer
 from qiling import Qiling
 
@@ -163,12 +170,14 @@ class QilingUi:
         imgui.same_line()
 
         path = self.ql.path # If the user closes the dialog, we cannot use ql anymore
+        rootfs = self.ql.rootfs
 
         if imgui.button(' Close '):
             self.close()
 
         imgui.separator()
-        imgui.text(path)
+        imgui.text(f'binary: {path}')
+        imgui.text(f'rootfs: {rootfs}')
         imgui.end()
 
 
