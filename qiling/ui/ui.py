@@ -1,28 +1,29 @@
-import pyglet, imgui
+import imgui, pyglet, sys
 from imgui.integrations.pyglet import create_renderer
 from qiling import Qiling
 
-from qiling.extensions.visualizer.DisasmWindow import DisasmWindow
-from qiling.extensions.visualizer.LogWindow import LogWindow
-from qiling.extensions.visualizer.RegistersWindow import RegistersWindow
-from qiling.extensions.visualizer.SelectBinaryWindow import SelectBinaryWindow
-
+from qiling.ui.windows import DisasmWindow
+from qiling.ui.windows import LogWindow
+from qiling.ui.windows import RegistersWindow
+from qiling.ui.windows import SelectExampleWindow
 
 
 SPEED_TEXT = ['0 ms', '50 ms', '100 ms', '300 ms', '1 s']
 SPEED_VALUES = [0,     0.05,    0.1,     0.3,      1.0]
 
 # pip install imgui[pyglet]
+# pip install -e .
+# py setup.py build_ext --inplace
 # https://www.aeracode.org/2018/02/19/python-async-simplified/
 
 
-
-class QilingView:
+class QilingUi:
     def __init__(self):
+        self._cursor = -2
         self.log = LogWindow()
         self.registers = RegistersWindow()
         self.disasm = DisasmWindow()
-        self.select_bin = SelectBinaryWindow()
+        self.select_example = SelectExampleWindow()
         self.ql = None
         self._started = False
         self._speed = 3     # 300 ms
@@ -69,30 +70,36 @@ class QilingView:
         self.disasm.capture(self.ql, self.start_address())
         self.registers.capture(self.ql, self.start_address())
 
-    def frame(self, dt):
-        if not self.ql:
-            res = self.select_bin.frame()
-            if not res:
-                return
+    def frame(self, window, dt):
+        #imgui.set_next_window_collapsed(True, imgui.FIRST_USE_EVER)
+        #imgui.show_demo_window()
+
+        if self.ql:
+            self.frame_ql(window, dt)
+        else:
+            self.frame_choose()
+
+    def frame_choose(self):
+        # No Qiling instance is created, so let the user choose a binary!
+        res = self.select_example.frame()
+        if res:
             # We got a binary, initialize it!
             self._argv, self._rootfs, self._output = res
             self.init()
-            return
 
-        # Auto-stepping
-        if self._dt is not None:
-            self._dt += dt
-            if self._dt >= SPEED_VALUES[self._speed]:
-                self._dt = 0.0
-                self.step()
-
+    def frame_ql(self, window, dt):
+        self.handle_auto_step(dt)
         self.control_window_frame(dt)
         self.disasm.frame()
         self.registers.frame()
         self.log.frame()
 
-        #imgui.set_next_window_collapsed(True, imgui.FIRST_USE_EVER)
-        #imgui.show_demo_window()
+    def handle_auto_step(self, dt):
+        if self._dt is not None:
+            self._dt += dt
+            if self._dt >= SPEED_VALUES[self._speed]:
+                self._dt = 0.0
+                self.step()
 
     def step(self):
         if not self._started:
@@ -106,6 +113,11 @@ class QilingView:
         self.capture_state()
 
     def control_window_frame(self, dt):
+        """Draw the control window
+
+        Args:
+            dt (float): Time since last call
+        """
         imgui.set_next_window_position(10, 10, imgui.FIRST_USE_EVER)
         imgui.begin('Control', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)
 
@@ -131,26 +143,28 @@ class QilingView:
 
         if imgui.button(' Close '):
             self.close()
+
+        imgui.separator()
+        imgui.text(self._argv[0])
         imgui.end()
 
 
-def run_window(update_fn):
+def run_ui(ui):
     window = pyglet.window.Window(width=1280, height=720, resizable=True)
     pyglet.gl.glClearColor(0.4, 0.5, 0.6, 1)
     imgui.create_context()
     io = imgui.get_io()
     io.ini_file_name = b''      # Disable imgui.ini
     #io.config_windows_move_from_title_bar_only = True
-
     imgui.style_colors_dark()   # Set dark style
     style = imgui.get_style()
     style.frame_rounding = 3.0
+    style.window_border_size = 0.
     impl = create_renderer(window)
 
     def draw(dt):
         imgui.new_frame()
-        update_fn(dt)   # Call the user supplied update callback
-
+        ui.frame(window, dt)
         window.clear()
         imgui.render()
         impl.render(imgui.get_draw_data())
@@ -159,13 +173,8 @@ def run_window(update_fn):
     pyglet.app.run()
     impl.shutdown()
 
-class DumOut:
-    def write(self, text):
-        pass
-
 
 if __name__ == "__main__":
-    #import sys
-    #sys.stdout = DumOut()
-    emu = QilingView()
-    run_window(emu.frame)
+    ui = QilingUi()
+    run_ui(ui)
+

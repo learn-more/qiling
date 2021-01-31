@@ -15,6 +15,8 @@ class LogWindow(logging.Handler):
     def emit(self, record):
         if self.formatter:
             msg = self.format(record)
+            if record.levelno >= logging.ERROR:
+                print(msg)
             msg = msg.replace('\033[9', '\033[3')   # pyimgui does not support the 'BRIGHT' colors
             self._msgs.append(msg)
             self._scroll_to_bottom = 2

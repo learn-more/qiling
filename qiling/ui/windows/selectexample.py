@@ -4,18 +4,12 @@ from pathlib import Path
 SELF_PATH = Path(__file__).parent
 SRC_PATH = SELF_PATH.parent.parent.parent
 ROOTFS_BASE_PATH = SRC_PATH / 'examples' / 'rootfs'
-#ROOTFS_PATH_32 = SRC_PATH / 'examples' / 'rootfs' / 'x86_windows'
-#ROOTFS_PATH_64 = SRC_PATH / 'examples' / 'rootfs' / 'x8664_windows'
-
-#[ROOTFS_PATH_64 / 'bin' /  'cmdln64.exe'],
-#                    ROOTFS_PATH_64,
-#                    'debug'
 
 
-class SelectBinaryWindow:
+class SelectExampleWindow:
     def __init__(self):
         self._rootfs_items = ['x86_windows', 'x8664_windows']
-        self._rootfs = 1
+        self._rootfs = 0
         self._binary_items = []
         self._binary = -1
         self._loglevel_items = ['default', 'disasm', 'debug', 'dump']
@@ -46,9 +40,8 @@ class SelectBinaryWindow:
         if changed:
             self.update_binaries()
 
-        #text_centered('Choose a binary')
         imgui.text_unformatted('Binary:')
-        _, self._binary = imgui.combo('##Binary', self._binary, self._binary_items)
+        _, self._binary = imgui.combo('##Binary', self._binary, self._binary_items, 200)
         imgui.spacing()
         imgui.separator()
         imgui.text_unformatted('Loglevel:')
@@ -56,12 +49,12 @@ class SelectBinaryWindow:
 
         imgui.spacing()
 
+        result = False
         if imgui.button(' Run '):
-            argv = [self.rootfs_dir() / 'bin' / self.binary()]
-            imgui.end()
-            return argv, self.rootfs_dir(), self.loglevel()
+            # A binary was selected, let's return this info!
+            argv = [str(self.rootfs_dir() / 'bin' / self.binary())]
+            result = argv, str(self.rootfs_dir()), self.loglevel()
 
         imgui.end()
-        #return argv, rootfs, output
-        return False
+        return result
 
