@@ -2,23 +2,19 @@ import imgui, pyglet, sys
 from imgui.integrations.pyglet import create_renderer
 from qiling import Qiling
 
-from qiling.ui.windows import DisasmWindow
-from qiling.ui.windows import LogWindow
-from qiling.ui.windows import RegistersWindow
-from qiling.ui.windows import SelectExampleWindow
+from qiling.extensions.ui.windows import DisasmWindow
+from qiling.extensions.ui.windows import LogWindow
+from qiling.extensions.ui.windows import RegistersWindow
+from qiling.extensions.ui.windows import SelectExampleWindow
 
 
 SPEED_TEXT = ['0 ms', '50 ms', '100 ms', '300 ms', '1 s']
 SPEED_VALUES = [0,     0.05,    0.1,     0.3,      1.0]
 
-# pip install imgui[pyglet]
-# pip install -e .
-# py setup.py build_ext --inplace
-# https://www.aeracode.org/2018/02/19/python-async-simplified/
 
 
 class QilingUi:
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         self._cursor = -2
         self.log = LogWindow()
         self.registers = RegistersWindow()
@@ -28,9 +24,36 @@ class QilingUi:
         self._started = False
         self._speed = 3     # 300 ms
         self._dt = None
-        self._argv = None
-        self._rootfs = None
-        self._output = None
+        self._args = args
+        self._kwargs = kwargs
+        # If we have arguments passed in, assume we are used as Qiling drop-in replacement!
+        if self._args or self._kwargs:
+            self.init()
+
+    def run(self):
+        window = pyglet.window.Window(width=1280, height=720, resizable=True)
+        pyglet.gl.glClearColor(0.4, 0.5, 0.6, 1)
+        imgui.create_context()
+        io = imgui.get_io()
+        io.ini_file_name = b''      # Disable imgui.ini
+        #io.config_windows_move_from_title_bar_only = True
+        imgui.style_colors_dark()   # Set dark style
+        style = imgui.get_style()
+        style.frame_rounding = 3.0
+        style.window_border_size = 0.
+        impl = create_renderer(window)
+
+        def draw(dt):
+            imgui.new_frame()
+            self.frame(window, dt)
+            window.clear()
+            imgui.render()
+            impl.render(imgui.get_draw_data())
+
+        pyglet.clock.schedule_interval(draw, 1/120.)
+        pyglet.app.run()
+        impl.shutdown()
+
 
     def start_address(self):
         if self._started:
@@ -57,18 +80,16 @@ class QilingUi:
         self._started = False
         self.disasm.reset()
         self.log.reset()
-        self.ql = Qiling(self._argv,
-                    self._rootfs,
-                    libcache=True,
-                    output=self._output,
+        self.ql = Qiling(*self._args, **self._kwargs,
                     log_override=self.log.create_logger())
         # Now process stuff logged during creation:
         self.log.set_ql(self.ql)
         self.capture_state()
 
     def capture_state(self):
-        self.disasm.capture(self.ql, self.start_address())
-        self.registers.capture(self.ql, self.start_address())
+        addr = self.start_address()
+        self.disasm.capture(self.ql, addr)
+        self.registers.capture(self.ql, addr)
 
     def frame(self, window, dt):
         #imgui.set_next_window_collapsed(True, imgui.FIRST_USE_EVER)
@@ -84,7 +105,7 @@ class QilingUi:
         res = self.select_example.frame()
         if res:
             # We got a binary, initialize it!
-            self._argv, self._rootfs, self._output = res
+            self._args, self._kwargs = res
             self.init()
 
     def frame_ql(self, window, dt):
@@ -141,40 +162,17 @@ class QilingUi:
         _, self._speed = imgui.slider_int('', self._speed, 0, len(SPEED_VALUES) - 1, SPEED_TEXT[self._speed])
         imgui.same_line()
 
+        path = self.ql.path # If the user closes the dialog, we cannot use ql anymore
+
         if imgui.button(' Close '):
             self.close()
 
         imgui.separator()
-        imgui.text(self._argv[0])
+        imgui.text(path)
         imgui.end()
-
-
-def run_ui(ui):
-    window = pyglet.window.Window(width=1280, height=720, resizable=True)
-    pyglet.gl.glClearColor(0.4, 0.5, 0.6, 1)
-    imgui.create_context()
-    io = imgui.get_io()
-    io.ini_file_name = b''      # Disable imgui.ini
-    #io.config_windows_move_from_title_bar_only = True
-    imgui.style_colors_dark()   # Set dark style
-    style = imgui.get_style()
-    style.frame_rounding = 3.0
-    style.window_border_size = 0.
-    impl = create_renderer(window)
-
-    def draw(dt):
-        imgui.new_frame()
-        ui.frame(window, dt)
-        window.clear()
-        imgui.render()
-        impl.render(imgui.get_draw_data())
-
-    pyglet.clock.schedule_interval(draw, 1/120.)
-    pyglet.app.run()
-    impl.shutdown()
 
 
 if __name__ == "__main__":
     ui = QilingUi()
-    run_ui(ui)
+    ui.run()
 

@@ -2,7 +2,7 @@ import imgui
 from pathlib import Path
 
 SELF_PATH = Path(__file__).parent
-SRC_PATH = SELF_PATH.parent.parent.parent
+SRC_PATH = SELF_PATH.parent.parent.parent.parent
 ROOTFS_BASE_PATH = SRC_PATH / 'examples' / 'rootfs'
 
 
@@ -53,7 +53,10 @@ class SelectExampleWindow:
         if imgui.button(' Run '):
             # A binary was selected, let's return this info!
             argv = [str(self.rootfs_dir() / 'bin' / self.binary())]
-            result = argv, str(self.rootfs_dir()), self.loglevel()
+            rootfs = str(self.rootfs_dir())
+            args = [argv, rootfs]
+            kwargs = {'output': self.loglevel()}
+            result = args, kwargs
 
         imgui.end()
         return result
