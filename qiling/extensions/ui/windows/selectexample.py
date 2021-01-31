@@ -8,13 +8,15 @@ ROOTFS_BASE_PATH = SRC_PATH / 'examples' / 'rootfs'
 
 class SelectExampleWindow:
     def __init__(self):
-        self._rootfs_items = ['x86_windows', 'x8664_windows']
+        #self._rootfs_items = ['x86_windows', 'x8664_windows']
+        self._rootfs_items = []
         self._rootfs = 0
         self._binary_items = []
         self._binary = -1
         self._loglevel_items = ['default', 'disasm', 'debug', 'dump']
         self._loglevel = 0
-        self.update_binaries()
+        self._update_rootfs()
+        self._update_binaries()
 
     def rootfs_dir(self):
         return ROOTFS_BASE_PATH / self._rootfs_items[self._rootfs]
@@ -25,20 +27,51 @@ class SelectExampleWindow:
     def binary(self):
         return self._binary_items[self._binary]
 
-    def update_binaries(self):
+    def _update_rootfs(self):
+        self._rootfs_items = []
+        self._rootfs = 0
+        try:
+            for rootfs in ROOTFS_BASE_PATH.iterdir():
+                if rootfs.is_dir() and (rootfs / 'bin').exists():
+                    # Only x86 supported for now
+                    if rootfs.name.startswith('x86'):
+                        self._rootfs_items.append(rootfs.name)
+        except FileNotFoundError as ex:
+            self._rootfs_items = []
+
+    def _update_binaries(self):
         self._binary_items = []
         self._binary = 0
-        for example in (self.rootfs_dir() / 'bin').iterdir():
-            if example.suffix != '.zip':
-                self._binary_items.append(example.name)
+        if self._rootfs_items:
+            try:
+                for example in (self.rootfs_dir() / 'bin').iterdir():
+                    if example.suffix != '.zip':
+                        self._binary_items.append(example.name)
+            except FileNotFoundError as ex:
+                self._binary_items = []
 
+    def show_help(self):
+        imgui.begin('QilingUi - No rootfs found', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)
+        imgui.text('QilingUi was unable to find any file to execute.')
+        imgui.text('Are you trying to run this script from a PyPI installation?')
+        imgui.text('Please use QilingUi as drop-in for Qiling:')
+        imgui.text('')
+        imgui.text('ql = Qiling(["rootfs/x86_windows/bin/x86_hello.exe"], "rootfs/x86_windows")')
+        imgui.text('ql.run()')
+        imgui.text('')
+        imgui.text('Alternatively, clone the qiling repository and run this script directly')
+        imgui.end()
 
     def frame(self):
+        if not self._rootfs_items or not self._binary_items:
+            self.show_help()
+            return
+
         imgui.begin('Get started', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)
         imgui.text_unformatted('Rootfs:')
-        changed, self._rootfs = imgui.combo('##Rootfs', self._rootfs, self._rootfs_items)
+        changed, self._rootfs = imgui.combo('##Rootfs', self._rootfs, self._rootfs_items, 200)
         if changed:
-            self.update_binaries()
+            self._update_binaries()
 
         imgui.text_unformatted('Binary:')
         _, self._binary = imgui.combo('##Binary', self._binary, self._binary_items, 200)
