@@ -27,6 +27,8 @@ def addr_to_str(ql, address):
     if name == '-':
         return '%0*x' % (ql.archbit // 4, address)
     else:
+        if ql.rootfs in name:
+            name = name.replace(ql.rootfs, '{rootfs}')
         return '%s + 0x%03x' % (name, offset)
 
 
