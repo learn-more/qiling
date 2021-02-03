@@ -80,6 +80,8 @@ class QilingUi:
         imgui.style_colors_dark()   # Set dark style
         style = imgui.get_style()
         style.frame_rounding = 3.0
+        style.scrollbar_rounding = 3.0
+        style.window_rounding = 0.
         style.window_border_size = 0.
         impl = create_renderer(window)
 
