@@ -19,6 +19,38 @@ SPEED_TEXT = ['0 ms', '50 ms', '100 ms', '300 ms', '1 s']
 SPEED_VALUES = [0,     0.05,    0.1,     0.3,      1.0]
 
 
+class LayoutHelper:
+    def __init__(self):
+        self.margin = None
+        self.window_padding = None
+        self.top_frame_bottom = None
+
+    def top_frame(self):
+        """ Centered, docked to the top of the screen
+        """
+        if not self.margin:
+            self.margin = imgui.get_style().frame_padding
+            self.window_padding = imgui.get_style().window_padding
+        imgui.set_next_window_position(imgui.get_io().display_size.x * 0.5, self.margin.y, imgui.FIRST_USE_EVER, 0.5)
+
+    def left_frame(self):
+        """Docked to the top left of the screen
+        """
+        if not self.top_frame_bottom:
+            self.top_frame_bottom = imgui.get_cursor_screen_pos().y + self.window_padding.y
+        imgui.set_next_window_position(self.margin.x, self.margin.y, imgui.FIRST_USE_EVER)
+
+    def bottom_frame(self):
+        """Docked to the bottom of the screen
+        """
+        bottom = imgui.get_io().display_size.y
+        imgui.set_next_window_position(self.margin.x, bottom - self.margin.y, imgui.FIRST_USE_EVER, 0, 1.)
+        imgui.set_next_window_size(1000, 210, imgui.FIRST_USE_EVER)
+
+    def center_frame(self):
+        #if not self._wait:
+        imgui.set_next_window_position(240, 100, imgui.FIRST_USE_EVER)
+        imgui.set_next_window_size(900, 300, imgui.FIRST_USE_EVER)
 
 class QilingUi:
     def __init__(self, *args, **kwargs):
@@ -27,6 +59,7 @@ class QilingUi:
         self.registers = RegistersWindow()
         self.disasm = DisasmWindow()
         self.select_example = SelectExampleWindow()
+        self.layout = LayoutHelper()
         self.ql = None
         self._started = False
         self._speed = 3     # 300 ms
@@ -92,6 +125,7 @@ class QilingUi:
         # Now process stuff logged during creation:
         self.log.set_ql(self.ql)
         self.capture_state()
+        self.layout = LayoutHelper()
 
     def capture_state(self):
         addr = self.start_address()
@@ -99,8 +133,8 @@ class QilingUi:
         self.registers.capture(self.ql, addr)
 
     def frame(self, window, dt):
-        #imgui.set_next_window_collapsed(True, imgui.FIRST_USE_EVER)
-        #imgui.show_demo_window()
+        imgui.set_next_window_collapsed(True, imgui.FIRST_USE_EVER)
+        imgui.show_demo_window()
 
         if self.ql:
             self.frame_ql(window, dt)
@@ -117,10 +151,19 @@ class QilingUi:
 
     def frame_ql(self, window, dt):
         self.handle_auto_step(dt)
-        self.control_window_frame(dt)
-        self.disasm.frame()
+
+        self.layout.top_frame()
+        if not self.control_window_frame(dt):
+            return
+
+        self.layout.left_frame()
         self.registers.frame()
+
+        self.layout.bottom_frame()
         self.log.frame()
+
+        self.layout.center_frame()
+        self.disasm.frame()
 
     def handle_auto_step(self, dt):
         if self._dt is not None:
@@ -146,11 +189,12 @@ class QilingUi:
         Args:
             dt (float): Time since last call
         """
-        imgui.set_next_window_position(10, 10, imgui.FIRST_USE_EVER)
         imgui.begin('Control', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)
 
         if imgui.button(' Restart '):
             self.init()
+            imgui.end()
+            return False
         imgui.same_line()
 
         if imgui.button(' > Step '):
@@ -179,6 +223,7 @@ class QilingUi:
         imgui.text(f'binary: {path}')
         imgui.text(f'rootfs: {rootfs}')
         imgui.end()
+        return True
 
 
 if __name__ == "__main__":

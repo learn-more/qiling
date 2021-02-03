@@ -77,7 +77,6 @@ class RegistersWindow:
         return fmt % (reg, color, bits, val)
 
     def frame(self):
-        imgui.set_next_window_position(10, 100, imgui.FIRST_USE_EVER)
         imgui.begin('Registers', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)
         for line in self._regs:
             if line == '-same-':

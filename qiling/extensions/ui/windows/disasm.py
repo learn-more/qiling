@@ -171,8 +171,6 @@ class DisasmWindow:
                         self._widths[idx] = value
 
     def frame(self):
-        imgui.set_next_window_position(240, 100, imgui.FIRST_USE_EVER)
-        imgui.set_next_window_size(900, 300, imgui.FIRST_USE_EVER)
         imgui.begin('Disasm')
         imgui.columns(4)
         imgui.separator()

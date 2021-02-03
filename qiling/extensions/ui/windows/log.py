@@ -50,9 +50,7 @@ class LogWindow(logging.Handler):
         self.formatter = None
 
     def frame(self):
-        imgui.set_next_window_position(10, 440, imgui.FIRST_USE_EVER)
         imgui.begin('Log')
-        imgui.set_window_size(1000, 250, imgui.FIRST_USE_EVER)
         if imgui.button('Clear'):
             self._msgs = []
         imgui.separator()
