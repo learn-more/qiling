@@ -33,9 +33,13 @@ class SelectExampleWindow:
         try:
             for rootfs in ROOTFS_BASE_PATH.iterdir():
                 if rootfs.is_dir() and (rootfs / 'bin').exists():
-                    # Only x86 supported for now
-                    if rootfs.name.startswith('x86'):
-                        self._rootfs_items.append(rootfs.name)
+                    # Only x86(64) supported for now
+                    if not rootfs.name.startswith('x86'):
+                        continue
+                    # Don't have access to this to test it
+                    if 'macos' in rootfs.name:
+                        continue
+                    self._rootfs_items.append(rootfs.name)
         except FileNotFoundError as ex:
             self._rootfs_items = []
 
