@@ -49,8 +49,8 @@ class LogWindow(logging.Handler):
         self._unformatted = []
         self.formatter = None
 
-    def frame(self):
-        imgui.begin('Log')
+    def frame(self, flags):
+        imgui.begin('Log', flags=flags)
         if imgui.button('Clear'):
             self._msgs = []
         imgui.separator()
@@ -63,4 +63,6 @@ class LogWindow(logging.Handler):
             imgui.set_scroll_here(1.0)
         imgui.pop_style_var()
         imgui.end_child()
+        height = imgui.get_window_height()
         imgui.end()
+        return height

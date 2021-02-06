@@ -170,8 +170,8 @@ class DisasmWindow:
                     if len(value) > len(self._widths[idx]):
                         self._widths[idx] = value
 
-    def frame(self):
-        imgui.begin('Disasm')
+    def frame(self, flags):
+        imgui.begin('Disasm', flags=flags)
         imgui.columns(4)
         imgui.separator()
         if self._widths:

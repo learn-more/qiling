@@ -14,6 +14,9 @@ from qiling.extensions.ui.windows import LogWindow
 from qiling.extensions.ui.windows import RegistersWindow
 from qiling.extensions.ui.windows import SelectExampleWindow
 
+DEFAULT_FLAGS = imgui.WINDOW_ALWAYS_AUTO_RESIZE | imgui.WINDOW_NO_COLLAPSE | imgui.WINDOW_NO_MOVE | imgui.WINDOW_NO_RESIZE
+
+
 
 SPEED_TEXT = ['0 ms', '50 ms', '100 ms', '300 ms', '1 s']
 SPEED_VALUES = [0,     0.05,    0.1,     0.3,      1.0]
@@ -23,34 +26,51 @@ class LayoutHelper:
     def __init__(self):
         self.margin = None
         self.window_padding = None
-        self.top_frame_bottom = None
+        self.top_size = None
+        self.left_size = None
+        self.bottom_size = None
+        self.display_size = None
+
+    def set_top_size(self, size):
+        self.top_size = size
+
+    def set_left_size(self, size):
+        self.left_size = size
+
+    def set_bottom_size(self, size):
+        self.bottom_size = size
+
+    def begin(self):
+        if not self.margin:
+            self.margin = imgui.get_style().frame_padding
+            self.window_padding = imgui.get_style().window_padding
+        self.display_size = imgui.get_io().display_size
 
     def top_frame(self):
         """ Centered, docked to the top of the screen
         """
-        if not self.margin:
-            self.margin = imgui.get_style().frame_padding
-            self.window_padding = imgui.get_style().window_padding
-        imgui.set_next_window_position(imgui.get_io().display_size.x * 0.5, self.margin.y, imgui.FIRST_USE_EVER, 0.5)
+        imgui.set_next_window_position(self.left_size + self.margin.x * 2, self.margin.y, imgui.ALWAYS)
 
     def left_frame(self):
         """Docked to the top left of the screen
         """
-        if not self.top_frame_bottom:
-            self.top_frame_bottom = imgui.get_cursor_screen_pos().y + self.window_padding.y
-        imgui.set_next_window_position(self.margin.x, self.margin.y, imgui.FIRST_USE_EVER)
+        imgui.set_next_window_position(self.margin.x, self.margin.y, imgui.ALWAYS)
 
     def bottom_frame(self):
         """Docked to the bottom of the screen
         """
-        bottom = imgui.get_io().display_size.y
-        imgui.set_next_window_position(self.margin.x, bottom - self.margin.y, imgui.FIRST_USE_EVER, 0, 1.)
-        imgui.set_next_window_size(1000, 210, imgui.FIRST_USE_EVER)
+        bottom = self.display_size.y
+        imgui.set_next_window_position(self.margin.x, bottom - self.margin.y, imgui.ALWAYS, 0, 1.)
+        imgui.set_next_window_size(1000, 210, imgui.ALWAYS)
 
     def center_frame(self):
-        #if not self._wait:
-        imgui.set_next_window_position(240, 100, imgui.FIRST_USE_EVER)
-        imgui.set_next_window_size(900, 300, imgui.FIRST_USE_EVER)
+        left = self.left_size + self.margin.x * 2
+        top = self.top_size + self.margin.y * 2
+        imgui.set_next_window_position(left, top, imgui.ALWAYS)
+        width = self.display_size.x - left
+        height = self.display_size.y - top - self.bottom_size
+        imgui.set_next_window_size(width - self.margin.x, height - self.margin.y * 2, imgui.ALWAYS)
+
 
 class QilingUi:
     def __init__(self, *args, **kwargs):
@@ -154,18 +174,27 @@ class QilingUi:
     def frame_ql(self, window, dt):
         self.handle_auto_step(dt)
 
-        self.layout.top_frame()
-        if not self.control_window_frame(dt):
-            return
+        self.layout.begin()
 
         self.layout.left_frame()
-        self.registers.frame()
+        width = self.registers.frame(DEFAULT_FLAGS)
+
+        self.layout.set_left_size(width)
+
+        self.layout.top_frame()
+        height = self.control_window_frame(dt)
+        if not height:
+            return
+
+        self.layout.set_top_size(height)
 
         self.layout.bottom_frame()
-        self.log.frame()
+        height = self.log.frame(DEFAULT_FLAGS)
+
+        self.layout.set_bottom_size(height)
 
         self.layout.center_frame()
-        self.disasm.frame()
+        self.disasm.frame(DEFAULT_FLAGS & ~imgui.WINDOW_ALWAYS_AUTO_RESIZE)
 
     def handle_auto_step(self, dt):
         if self._dt is not None:
@@ -191,7 +220,7 @@ class QilingUi:
         Args:
             dt (float): Time since last call
         """
-        imgui.begin('Control', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)
+        imgui.begin('Control', flags=DEFAULT_FLAGS)
 
         if imgui.button(' Restart '):
             self.init()
@@ -224,8 +253,9 @@ class QilingUi:
         imgui.separator()
         imgui.text(f'binary: {path}')
         imgui.text(f'rootfs: {rootfs}')
+        height = imgui.get_window_height()
         imgui.end()
-        return True
+        return height
 
 
 if __name__ == "__main__":

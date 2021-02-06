@@ -76,8 +76,8 @@ class RegistersWindow:
         self._old[reg] = val
         return fmt % (reg, color, bits, val)
 
-    def frame(self):
-        imgui.begin('Registers', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)
+    def frame(self, flags):
+        imgui.begin('Registers', flags=flags)
         for line in self._regs:
             if line == '-same-':
                 imgui.same_line()
@@ -85,4 +85,6 @@ class RegistersWindow:
                 imgui.separator()
             else:
                 imgui.text_ansi(line)
+        width = imgui.get_window_width()
         imgui.end()
+        return width
