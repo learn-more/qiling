@@ -85,6 +85,6 @@ class RegistersWindow:
                 imgui.separator()
             else:
                 imgui.text_ansi(line)
-        width = imgui.get_window_width()
+        size = imgui.get_window_size()
         imgui.end()
-        return width
+        return size

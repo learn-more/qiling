@@ -49,7 +49,7 @@ class LayoutHelper:
     def top_frame(self):
         """ Centered, docked to the top of the screen
         """
-        imgui.set_next_window_position(self.left_size + self.margin.x * 2, self.margin.y, imgui.ALWAYS)
+        imgui.set_next_window_position(self.left_size.x + self.margin.x * 2, self.margin.y, imgui.ALWAYS)
 
     def left_frame(self):
         """Docked to the top left of the screen
@@ -57,18 +57,25 @@ class LayoutHelper:
         imgui.set_next_window_position(self.margin.x, self.margin.y, imgui.ALWAYS)
 
     def bottom_frame(self):
-        """Docked to the bottom of the screen
+        """Docked to the bottom of the screen.
+           Move out of the way of the register window when it is going to overlap
         """
         bottom = self.display_size.y
-        imgui.set_next_window_position(self.margin.x, bottom - self.margin.y, imgui.ALWAYS, 0, 1.)
-        imgui.set_next_window_size(1000, 210, imgui.ALWAYS)
+        left = self.margin.x
+        height = 210
+        # Overlapping the register window?
+        if bottom - height < self.left_size.y + self.margin.y * 3:
+            # Move to the right
+            left = self.left_size.x + self.margin.x * 2
+        imgui.set_next_window_position(left, bottom - self.margin.y, imgui.ALWAYS, 0, 1.)
+        imgui.set_next_window_size(self.display_size.x - left - self.margin.x, height, imgui.ALWAYS)
 
     def center_frame(self):
-        left = self.left_size + self.margin.x * 2
-        top = self.top_size + self.margin.y * 2
+        left = self.left_size.x + self.margin.x * 2
+        top = self.top_size.y + self.margin.y * 2
         imgui.set_next_window_position(left, top, imgui.ALWAYS)
         width = self.display_size.x - left
-        height = self.display_size.y - top - self.bottom_size
+        height = self.display_size.y - top - self.bottom_size.y
         imgui.set_next_window_size(width - self.margin.x, height - self.margin.y * 2, imgui.ALWAYS)
 
 
@@ -177,21 +184,21 @@ class QilingUi:
         self.layout.begin()
 
         self.layout.left_frame()
-        width = self.registers.frame(DEFAULT_FLAGS)
+        size = self.registers.frame(DEFAULT_FLAGS)
 
-        self.layout.set_left_size(width)
+        self.layout.set_left_size(size)
 
         self.layout.top_frame()
-        height = self.control_window_frame(dt)
-        if not height:
+        size = self.control_window_frame(dt)
+        if not size:
             return
 
-        self.layout.set_top_size(height)
+        self.layout.set_top_size(size)
 
         self.layout.bottom_frame()
-        height = self.log.frame(DEFAULT_FLAGS)
+        size = self.log.frame(DEFAULT_FLAGS)
 
-        self.layout.set_bottom_size(height)
+        self.layout.set_bottom_size(size)
 
         self.layout.center_frame()
         self.disasm.frame(DEFAULT_FLAGS & ~imgui.WINDOW_ALWAYS_AUTO_RESIZE)
@@ -253,9 +260,9 @@ class QilingUi:
         imgui.separator()
         imgui.text(f'binary: {path}')
         imgui.text(f'rootfs: {rootfs}')
-        height = imgui.get_window_height()
+        size = imgui.get_window_size()
         imgui.end()
-        return height
+        return size
 
 
 if __name__ == "__main__":

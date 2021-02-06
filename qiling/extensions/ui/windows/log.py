@@ -63,6 +63,6 @@ class LogWindow(logging.Handler):
             imgui.set_scroll_here(1.0)
         imgui.pop_style_var()
         imgui.end_child()
-        height = imgui.get_window_height()
+        size = imgui.get_window_size()
         imgui.end()
-        return height
+        return size
