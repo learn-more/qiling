@@ -37,7 +37,7 @@ class SelectExampleWindow:
                     if not rootfs.name.startswith('x86'):
                         continue
                     # Don't have access to this to test it
-                    if 'macos' in rootfs.name:
+                    if 'macos' in rootfs.name or 'freebsd' in rootfs.name:
                         continue
                     self._rootfs_items.append(rootfs.name)
         except FileNotFoundError as ex:
