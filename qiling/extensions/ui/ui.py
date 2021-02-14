@@ -197,7 +197,7 @@ class QilingUi:
         self.layout.set_top_size(size)
 
         self.layout.bottom_frame()
-        size = self.log.frame(DEFAULT_FLAGS)
+        size = self.log.frame(DEFAULT_FLAGS & ~imgui.WINDOW_NO_COLLAPSE)
 
         self.layout.set_bottom_size(size)
 
@@ -228,7 +228,7 @@ class QilingUi:
         Args:
             dt (float): Time since last call
         """
-        imgui.begin('Control', flags=DEFAULT_FLAGS)
+        imgui.begin(f'{format_module_name(self.ql, self.ql.path)}###Control', flags=DEFAULT_FLAGS)
 
         if imgui.button(' Restart '):
             self.init()
@@ -252,14 +252,13 @@ class QilingUi:
         _, self._speed = imgui.slider_int('', self._speed, 0, len(SPEED_VALUES) - 1, SPEED_TEXT[self._speed])
         imgui.same_line()
 
-        path = self.ql.path # If the user closes the dialog, we cannot use ql anymore
+        # If the user closes the dialog, we cannot use ql anymore
         rootfs = self.ql.rootfs
 
         if imgui.button(' Close '):
             self.close()
 
         imgui.separator()
-        imgui.text(f'binary: {path}')
         imgui.text(f'rootfs: {rootfs}')
         size = imgui.get_window_size()
         imgui.end()
