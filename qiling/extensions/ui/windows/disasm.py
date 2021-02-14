@@ -1,36 +1,7 @@
 import capstone, imgui
+from unicorn import UcError
 
-def addr_to_str(ql, address):
-    """Try to convert an address to a human-readable string
-
-    Args:
-        ql (Qiling): The current Qiling instance
-        address (int): The address
-
-    Returns:
-        string: The pretty-printed result
-    """
-    offset, name = ql.os.get_offset_and_name(address)
-
-    pe = ql.loader
-    if hasattr(pe, 'import_symbols'):
-        # Optimal case, we have an exact match
-        sym = pe.import_symbols.get(address, None)
-        if sym:
-            return '%s.%s' % (sym['dll'], sym['name'].decode())
-
-    # Replace the [PE] placeholder with the actual name
-    if name == '[PE]' or name == '[module]':
-        name = ql.targetname
-
-    # We were unable to find a 'pretty' label, so just represent it as module + offset
-    if name == '-':
-        return '%0*x' % (ql.archbit // 4, address)
-    else:
-        if ql.rootfs in name:
-            name = name.replace(ql.rootfs, '{rootfs}')
-        return '%s + 0x%03x' % (name, offset)
-
+from qiling.extensions.ui.utils import addr_to_str
 
 def calc_text_content_size(text):
     text_size = imgui.calc_text_size(text)
@@ -48,20 +19,49 @@ def pprint_op_str(ql, insn):
             return f'<{addr_to_str(ql, op.imm)}>'
         elif op.type == capstone.CS_OP_MEM:
             mem = op.mem
-            if mem.base == 0 and mem.segment == 0 and mem.scale == 1:
-                assert op.size == 4, op.size
-                ptr_name = addr_to_str(ql, mem.disp)
-                dest = ql.mem.read_ptr(mem.disp)
-                dest_name = addr_to_str(ql, dest)
-                return 'dword ptr [%s]; %s' % (ptr_name, dest_name)
-            elif mem.base == ql.reg.uc_pc and mem.segment == 0 and mem.scale == 1:
-                # 'qword ptr [rip + 0x8ba]'
-                assert op.size == 8
-                ptr = insn.address + mem.disp + insn.size
-                ptr_name = addr_to_str(ql, ptr)
-                dest = ql.mem.read_ptr(ptr)
-                dest_name = addr_to_str(ql, dest)
-                return 'qword ptr [%s]; %s' % (ptr_name, dest_name)
+            if mem.segment == 0 and mem.scale == 1 and mem.index == 0:
+                if insn.op_str.startswith('qword ptr'):
+                    ptr_size = 8
+                elif insn.op_str.startswith('dword ptr'):
+                    ptr_size = 4
+                elif insn.op_str.startswith('word ptr'):
+                    ptr_size = 2
+                else:
+                    assert insn.op_str.startswith('byte ptr')
+                    ptr_size = 1
+                if mem.base == 0:
+                    assert op.size == 4, op.size
+                    assert 'dword ptr' in insn.op_str
+                    ptr_name = addr_to_str(ql, mem.disp)
+                    try:
+                        dest = ql.mem.read_ptr(mem.disp)
+                        dest_name = addr_to_str(ql, dest)
+                    except UcError:
+                        dest_name = '???'
+                    return 'dword ptr [%s]; %s' % (ptr_name, dest_name)
+                elif mem.base == ql.reg.uc_pc:
+                    # 'qword ptr [rip + 0x8ba]'
+                    assert op.size == 8
+                    assert 'qword ptr' in insn.op_str
+                    ptr = insn.address + mem.disp + insn.size
+                    ptr_name = addr_to_str(ql, ptr)
+                    try:
+                        dest = ql.mem.read_ptr(ptr)
+                        dest_name = addr_to_str(ql, dest)
+                    except UcError:
+                        dest_name = '???'
+                    return 'qword ptr [%s]; %s' % (ptr_name, dest_name)
+                else:
+                    # xword ptr [reg + mem.disp]
+                    reg = ql.reg.read(mem.base)
+                    ptr = reg + mem.disp
+                    try:
+                        val = ql.mem.read_ptr(ptr, ptr_size)
+                        val_name = addr_to_str(ql, val)
+                       # val = f'{val:x}'
+                    except UcError:
+                        val_name = '???'
+                    return '%s;  %s' % (insn.op_str, val_name)
     return insn.op_str
 
 
@@ -124,13 +124,14 @@ class DisasmWindow:
     def __init__(self):
         self.lines = []
         self.md = None
-        self._widths = []
+        self._widths = [0, 0]
         self._history = History()
+        self._translated_address = True
 
     def reset(self):
         self.lines = []
         self.md = None
-        self._widths = []
+        self._widths = [0, 0]
         self._history = History()
 
     def capture(self, ql, address):
@@ -162,32 +163,23 @@ class DisasmWindow:
 
                 self.lines.append((insn, selected))
 
-            # Since we do not have an active imgui context here, we just store the longest string,
-            # so that we can calculate the text width later
-            self._widths = ['', '', '']
-            for cols in [(insn.addr_str, insn.addr_name, insn.data) for insn, _ in self.lines]:
-                for idx, value in enumerate(cols):
-                    if len(value) > len(self._widths[idx]):
-                        self._widths[idx] = value
+    def _column_width(self, idx, text):
+        l = len(text)
+        if l > self._widths[idx]:
+            self._widths[idx] = l
 
     def frame(self, flags):
         imgui.begin('Disasm', flags=flags)
-        imgui.columns(4)
+        changed, self._translated_address = imgui.checkbox("Use translated address", self._translated_address)
+        if changed:
+            self._widths[0] = 0
+        imgui.columns(3)
         imgui.separator()
-        if self._widths:
-            # We need an active imgui context to calculate text width,
-            # so we delegated width calculation until we have one
-            if isinstance(self._widths[0], str):
-                for idx, text in enumerate(self._widths):
-                    self._widths[idx] = calc_text_content_size(text)
 
-        for idx, name in enumerate(['Address', 'Module Address', 'Bytes', 'Instruction']):
+        addr_name = 'Translated Address' if self._translated_address else 'Address'
+        for name in [addr_name, 'Bytes', 'Instruction']:
             imgui.text(name)
-            if idx < len(self._widths):
-                imgui.set_column_width(-1, self._widths[idx])
             imgui.next_column()
-        #if self._widths:
-        #    self._widths = []
         imgui.separator()
 
         # Change the style for our instruction buttons
@@ -195,10 +187,12 @@ class DisasmWindow:
         imgui.push_style_var(imgui.STYLE_FRAME_ROUNDING, 2.)
 
         for insn, selected in self.lines:
-            imgui.selectable(insn.addr_str, selected, flags=imgui.SELECTABLE_SPAN_ALL_COLUMNS)
-            imgui.next_column()
+            text = insn.addr_name if self._translated_address else insn.addr_str
 
-            imgui.text(insn.addr_name)
+            self._column_width(0, text)
+            self._column_width(1, insn.data)
+
+            imgui.selectable(text, selected, flags=imgui.SELECTABLE_SPAN_ALL_COLUMNS)
             imgui.next_column()
 
             imgui.text(insn.data)
@@ -206,6 +200,10 @@ class DisasmWindow:
 
             insn.add_mnem()
             imgui.next_column()
+
+        for idx, width in enumerate(self._widths):
+            width = calc_text_content_size('W' * width)
+            imgui.set_column_width(idx, width)
 
         imgui.pop_style_var(2)
 

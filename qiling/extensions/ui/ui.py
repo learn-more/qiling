@@ -9,6 +9,7 @@ except ImportError as ex:
 from imgui.integrations.pyglet import create_renderer
 from qiling import Qiling
 
+from qiling.extensions.ui.utils import format_module_name
 from qiling.extensions.ui.windows import DisasmWindow
 from qiling.extensions.ui.windows import LogWindow
 from qiling.extensions.ui.windows import RegistersWindow
